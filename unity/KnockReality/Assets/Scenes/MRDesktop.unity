@@ -1143,7 +1143,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b9497154e66b5c3469facf17bb4f6d0e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  server: 127.0.0.0:8000
+  server: http://127.0.0.1:8000/audio/stream/
   lefthandObject: {fileID: 1766929944}
   righthandObject: {fileID: 2036152058}
   actionObject: {fileID: 471009886}

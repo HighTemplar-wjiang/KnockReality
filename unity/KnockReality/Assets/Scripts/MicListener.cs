@@ -15,6 +15,8 @@ public class MicListener : MonoBehaviour
 
     // Remote server for signal processing.
     public string server;
+    private float[] send_buffer = new float[BUFFER_SIZE];
+    private int data_size = 0;
 
     // Hands. 
     public GameObject lefthandObject;
@@ -24,7 +26,7 @@ public class MicListener : MonoBehaviour
     private float cooldownSec = COOLDOWN;
     private AudioClip mic;
     private int lastPos, pos;
-    private float[] buffer = new float[BUFFER_SIZE];
+    private int segment_counter;
 
     // Action object. 
     private bool objectStatus;
@@ -34,7 +36,7 @@ public class MicListener : MonoBehaviour
     void Start()
     {
         // Start mic. 
-        mic = Microphone.Start(null, false, MIC_RECORD_SEC, FREQUENCY);
+        mic = Microphone.Start(null, true, MIC_RECORD_SEC, FREQUENCY);
 
         // Create an audio source.
         AudioSource audio = GetComponent<AudioSource>();
@@ -45,12 +47,20 @@ public class MicListener : MonoBehaviour
         this.objectStatus = false;
         this.actionObject.SetActive(this.objectStatus);
     }
-
+     
     // Update is called once per frame
     void Update()
     {
+        // Set cool-down.
+        if (this.cooldownSec >= 0)
+        {
+            this.cooldownSec -= Time.deltaTime;
+        }
+
         // AttachObject(this.actionObject, righthandObject.transform.position, righthandObject.transform.rotation);
-        if ((pos = Microphone.GetPosition(null)) > 0)
+        pos = Microphone.GetPosition(null);
+        // Debug.Log(string.Format("[Mic] {0} {1}", pos, lastPos));
+        if (pos > 0)
         {
             if(lastPos > pos)
             {
@@ -59,12 +69,28 @@ public class MicListener : MonoBehaviour
             
             if(pos - lastPos > 0)
             {
+                // Allocate buffer for mic data. 
+                // Note: the number of samples taken from mic is decided by this buffer size. 
+                var buffer = new float[(pos - lastPos) * mic.channels];
+
                 // Get data from mic.
                 mic.GetData(buffer, lastPos);
+                System.Array.Copy(buffer, 0, this.send_buffer, this.data_size, buffer.Length);
+                this.data_size += buffer.Length;
 
                 // Set sampled data to audio source.
                 AudioSource audio = GetComponent<AudioSource>();
                 audio.clip.SetData(buffer, lastPos);
+
+                // Post data when possible. 
+                if (this.cooldownSec < 0)
+                {
+                    var post_data = new float[this.data_size];
+                    System.Array.Copy(this.send_buffer, post_data, this.data_size);
+                    StartCoroutine(PostAudioClip(post_data, this.data_size));
+                    this.cooldownSec = COOLDOWN;
+                    this.data_size = 0;
+                }
 
                 // Debug.
                 // Debug.Log("[Audio]" + string.Join(" ", sample));
@@ -75,14 +101,6 @@ public class MicListener : MonoBehaviour
                     sampleSum += System.Math.Abs(samplePoint);
                 }*/
                 // Debug.Log("[Audio]" + sampleSum.ToString());
-                if(this.cooldownSec < 0)
-                {
-                    this.cooldownSec = COOLDOWN;
-                }
-                else
-                {
-                    this.cooldownSec -= Time.deltaTime;
-                }
                 
 
                 if (!audio.isPlaying)
@@ -126,10 +144,10 @@ public class MicListener : MonoBehaviour
     }
 
     // Streaming audio data.
-    IEnumerator StreamAudio()
+    IEnumerator PostAudioClip(float[] buffer, int data_size)
     {
         // Convert audio sample to text.
-        var jsonString = string.Format("{\"instances\": {0} }", string.Join(",", buffer));
+        var jsonString = string.Format("{{\"instances\": [{0}] }}", string.Join(",", buffer));
         var jsonBinary = System.Text.Encoding.UTF8.GetBytes(jsonString);
 
         // Init handlers.
@@ -146,12 +164,21 @@ public class MicListener : MonoBehaviour
         if(www.result == UnityWebRequest.Result.ConnectionError)
         {
             Debug.LogError(string.Format("{0}: {1}", www.url, www.error));
+            www.Dispose();
         }
         else
         {
-            Debug.Log("[Audio] results: ");
-        }
+            KnockDetectorResult jsonResult = KnockDetectorResult.CreateFromJSON(www.downloadHandler.text);
+            // Debug.Log("[Audio] results: " + www.downloadHandler.text);
+            Debug.Log("[Audio] results: " + jsonResult.ToString());
+            if (jsonResult.top_class_name != "_silence_")
+            {
+                AttachObject(this.actionObject, righthandObject.transform.position, righthandObject.transform.rotation);
+            }
 
+            www.Dispose();
+        }
+        yield break;
     }
 
     private void OnDestroy()
