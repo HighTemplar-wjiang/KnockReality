@@ -11,15 +11,16 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 # Settings.
-SAMPLING_RATE = 16000
+SAMPLING_RATE = 32000
 AUDIO_SEGMENT_SIZE = 34816
-TENSORFLOW_SERVER_ENDPOINT = r"http://10.100.237.77:18501/v1/models/knock_detector:predict"
+TENSORFLOW_SERVER_ENDPOINT = r"http://192.168.137.242:18501/v1/models/knock_detector:predict"
+CLASSNAMES = ["_silence_", "knock_calendar", "knock_ironlocker", "knock_tabletop"]
 
 # Init server app.
 app = FastAPI()
 
 # Init audio receiver.
-audio_buffer = AudioStreamBuffer(buffer_size_sec=10, stride_sec=0, sampling_rate=16000)
+audio_buffer = AudioStreamBuffer(buffer_size_sec=10, stride_sec=0.8, sampling_rate=SAMPLING_RATE)
 
 
 @app.get("/")
@@ -50,42 +51,70 @@ async def audio_stream_receiver(request: Request, background_tasks: BackgroundTa
     audio_buffer.append_audio_segment(stream_json["instances"])
 
     # Run recognition when possible.
-    audio_segment = audio_buffer.take_segment(AUDIO_SEGMENT_SIZE)
-    if audio_segment is not None:
-        # Post to tensorflow server.
-        audio_segment = audio_segment.tolist()
-        json_body = json.dumps({
-            "instances": [audio_segment]
-        })
-        # NOTE: using synchronized model for returning the result to Unity.
-        result = requests.post(
-            TENSORFLOW_SERVER_ENDPOINT,
-            data=json_body
-        )
-        prediction_result = result.json()
-        idx_top_class = np.argmax(prediction_result["predictions"])
-        print(prediction_result, idx_top_class)
+    return_result = {
+        "status": "ok",
+        "predictions": [0.0, 0.0, 0.0, 0.0],
+        "top_class_name": "_silence_"
+    }
 
-        # Plotting.
-        fig, ax = plt.subplots()
-        ax.plot(np.array(audio_segment).flatten())
-        ax.set_title(str(prediction_result))
-        fig.savefig("./log/audio_segment_{}.png".format(int(time.time())), dpi=150)
+    # return return_result
 
-        # Constructing result.
+    # Sliding the whole buffer.
+    while True:
+        audio_segment = audio_buffer.take_segment(AUDIO_SEGMENT_SIZE)
+        # print("sliding...")
+        if audio_segment is not None:
 
-        return_body = {
-            "status": "ok",
-            "predictions": prediction_result["predictions"],
-            "top_class_name": "_silence_" if idx_top_class == 0 else "knock!"
-        }
-        return return_body
-    else:
-        return {
-            "status": "ok",
-            "predictions": [0.0, 0.0, 0.0],
-            "top_class_name": "_silence_"
-        }
+            # Sanity check.
+            if np.max(audio_segment) < 0.01:
+                # Silence.
+                # audio_buffer.reset()
+                continue
+
+            # Normalization.
+            audio_segment = audio_segment / np.max(np.abs(audio_segment)) * 0.15
+
+            # Post to tensorflow server.
+            audio_segment = audio_segment.tolist()
+            json_body = json.dumps({
+                "instances": [audio_segment]
+            })
+            # NOTE: using synchronized model for returning the result to Unity.
+            result = requests.post(
+                TENSORFLOW_SERVER_ENDPOINT,
+                data=json_body
+            )
+            prediction_result = result.json()
+            idx_top_class = np.argmax(prediction_result["predictions"])
+
+            # Plotting.
+            fig, ax = plt.subplots()
+            ax.plot(np.array(audio_segment).flatten())
+            ax.set_title(str(prediction_result))
+            fig.savefig("./log/audio_segment_{}.png".format(int(time.time())), dpi=150)
+
+            # Get class name.
+            if np.max(prediction_result["predictions"]) < 0.6:
+                return_class = "_silence_"
+            else:
+                return_class = CLASSNAMES[idx_top_class]
+            print(prediction_result, return_class)
+
+            # Constructing result.
+            if ((return_class != "_silence_")
+                    and (np.max(prediction_result["predictions"]) > np.max(return_result["predictions"]))):
+                return_result = {
+                    "status": "ok",
+                    "predictions": prediction_result["predictions"],
+                    "top_class_name": return_class
+                }
+                audio_buffer.reset()
+        else:
+            break
+
+    # End of sliding.
+    # audio_buffer.reset()
+    return return_result
 
 
 if __name__ == "__main__":

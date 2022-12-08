@@ -19,6 +19,9 @@ class AudioStreamBuffer:
         self._idx_end = 0  # Not inclusive.
         self._audio_buffer = Queue(shape=(self._buffer_size, 1))
 
+    def reset(self):
+        self._audio_buffer.reset()
+
     def append_audio_segment(self, audio_segment):
         if self._audio_buffer.isfull:
             # Buffer is full.

@@ -11,9 +11,12 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Oculus/SampleFramework/Usage/Passthrough/Scenes/OverlayPassthrough.unity
     guid: 698c56db7f615834881cf3fad4dae4b5
-  - enabled: 1
+  - enabled: 0
     path: Assets/Oculus/SampleFramework/Usage/Passthrough/Scenes/PassthroughHands.unity
     guid: c94e480e4a6da614693c0cd3372e2d2d
+  - enabled: 1
+    path: Assets/Scenes/MRDesktop.unity
+    guid: e87ce119f0d80db4eb16955b6f979a8c
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 317109fb5e914c64c8f52565d41569ff, type: 2}
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 42385a5ea189cdc44a298fe2f0899973, type: 2}
